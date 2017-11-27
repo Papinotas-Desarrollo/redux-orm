@@ -327,7 +327,7 @@ const Model = class Model {
         const ModelClass = this;
         const rows = this._findDatabaseRows({ [ModelClass.idAttribute]: id });
         if (rows.length === 0) {
-            throw new Error(`${ModelClass.modelName} instance with id ${id} not found`);
+            return null;
         }
 
         return new ModelClass(rows[0]);
