@@ -114,9 +114,9 @@ describe('Integration', () => {
             'releaseYear: 2050, author: 0, cover: 0, genres: [0, 1], publisher: 1}');
         });
 
-        it('withId throws if model instance not found', () => {
+        it('withId does not throw if model instance not found', () => {
             const { Book } = session;
-            expect(() => Book.withId(10)).toThrowError(Error);
+            expect(() => Book.withId(10)).not.toThrowError(Error);
         });
 
         it('Models correctly create a new instance via upsert', () => {
@@ -799,5 +799,120 @@ describe('Big Data Test', () => {
         const tookSeconds = (end - start) / 1000;
         console.log(`Creating ${amount} objects took ${tookSeconds}s`);
         expect(tookSeconds).toBeLessThanOrEqual(3);
+    });
+
+    it('looks up items by id in a large table in acceptable time', () => {
+        const session = orm.session(orm.getEmptyState());
+
+        const rowCount = 20000;
+        for (let i = 0; i < rowCount; i++) {
+            session.Item.create({ id: i, name: 'TestItem' });
+        }
+
+        const lookupCount = 10000;
+        const maxId = rowCount - 1;
+        const start = new Date().getTime();
+        for (let j = maxId; j > maxId - lookupCount; j--) {
+            session.Item.withId(j);
+        }
+        const end = new Date().getTime();
+        const tookSeconds = (end - start) / 1000;
+        console.log(`Looking up ${lookupCount} objects by id took ${tookSeconds}s`);
+        expect(tookSeconds).toBeLessThanOrEqual(3);
+    });
+});
+
+describe('Many-to-many relationship performance', () => {
+    let Parent;
+    let Child;
+    let orm;
+
+    beforeEach(() => {
+        Parent = class extends Model {
+        };
+        Parent.modelName = 'Parent';
+        Parent.fields = {
+            id: attr(),
+            name: attr(),
+            children: many('Child', 'parent'),
+        };
+        Child = class extends Model {
+        };
+        Child.modelName = 'Child';
+        orm = new ORM();
+        orm.register(Parent, Child);
+    });
+
+    it('adds many-to-many relationships in acceptable time', () => {
+        const session = orm.session(orm.getEmptyState());
+
+        const totalAmount = 8000;
+        for (let i = 0; i < totalAmount; i++) {
+            session.Child.create({ id: i, name: 'TestChild' });
+        }
+
+        const parent = session.Parent.create({});
+        const start = new Date().getTime();
+        const childAmount = 2500;
+        for (let i = 0; i < childAmount; i++) {
+            parent.children.add(i);
+        }
+
+        const end = new Date().getTime();
+        const tookSeconds = (end - start) / 1000;
+        console.log(`Adding ${childAmount} relations took ${tookSeconds}s`);
+        expect(tookSeconds).toBeLessThanOrEqual(process.env.TRAVIS ? 10 : 3);
+    });
+
+    it('queries many-to-many relationships in acceptable time', () => {
+        const session = orm.session(orm.getEmptyState());
+
+        const totalAmount = 10000;
+        for (let i = 0; i < totalAmount; i++) {
+            session.Child.create({ id: i, name: 'TestChild' });
+        }
+
+        const parent = session.Parent.create({});
+        const relationshipAmount = 3000;
+        for (let i = 0; i < relationshipAmount; i++) {
+            parent.children.add(i);
+        }
+
+        const start = new Date().getTime();
+        const queryCount = 500;
+        for (let j = 0; j < queryCount; j++) {
+            parent.children.count();
+        }
+
+        const end = new Date().getTime();
+        const tookSeconds = (end - start) / 1000;
+        console.log(`Performing ${queryCount} queries took ${tookSeconds}s`);
+        expect(tookSeconds).toBeLessThanOrEqual(process.env.TRAVIS ? 10 : 3);
+    });
+
+    it('removes many-to-many relationships in acceptable time', () => {
+        const session = orm.session(orm.getEmptyState());
+
+        const totalAmount = 10000;
+        for (let i = 0; i < totalAmount; i++) {
+            session.Child.create({ id: i, name: 'TestChild' });
+        }
+
+        const parent = session.Parent.create({});
+        const childAmount = 2000;
+        for (let i = 0; i < childAmount; i++) {
+            parent.children.add(i);
+        }
+
+        const removeCount = 1000;
+        const start = new Date().getTime();
+        for (let j = 0; j < removeCount; j++) {
+            parent.children.remove(j);
+        }
+
+        const end = new Date().getTime();
+        const tookSeconds = (end - start) / 1000;
+        console.log(`Removing ${removeCount} relations took ${tookSeconds}s`);
+        expect(tookSeconds).toBeLessThanOrEqual(process.env.TRAVIS ? 10 : 3);
     });
 });
