@@ -1,10 +1,11 @@
-redux-orm
+redux-orm-flex
 ===============
-[![Build Status](https://img.shields.io/travis/tommikaikkonen/redux-orm.svg?style=flat-square)](https://travis-ci.org/tommikaikkonen/redux-orm)
-[![Coverage Status](https://img.shields.io/codecov/c/github/tommikaikkonen/redux-orm/master.svg?style=flat-square)](https://codecov.io/gh/tommikaikkonen/redux-orm/branch/master)
-[![NPM package](https://img.shields.io/npm/v/redux-orm.svg?style=flat-square)](https://www.npmjs.com/package/redux-orm)
-[![NPM downloads](https://img.shields.io/npm/dm/redux-orm.svg?style=flat-square)](https://www.npmjs.com/package/redux-orm)
-[![Gitter](https://badges.gitter.im/redux-orm/Lobby.svg)](https://gitter.im/redux-orm/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
+## Important
+
+This repo was forked from [Redux ORM](https://github.com/tommikaikkonen/redux-orm). This fork allows models to have FK to null objects, which is usual in an async world.
+
+## Introduction
 
 A small, simple and immutable ORM to manage relational data in your Redux store.
 
@@ -23,7 +24,7 @@ API can be unstable until 1.0.0. Minor version bumps before 1.0.0 can and will i
 ## Installation
 
 ```bash
-npm install redux-orm --save
+npm install redux-orm-flex --save
 ```
 
 Or with a script tag
@@ -447,13 +448,13 @@ Book.fields = {
 }
 ```
 
-All the fields `fk`, `oneToOne` and `many` take a single argument, the related model name. The fields will be available as properties on each `Model` instance. You can set related fields with the id value of the related instance, or the related instance itself. 
+All the fields `fk`, `oneToOne` and `many` take a single argument, the related model name. The fields will be available as properties on each `Model` instance. You can set related fields with the id value of the related instance, or the related instance itself.
 
 For `fk`, you can access the reverse relation through `author.bookSet`, where the related name is `${modelName}Set`. Same goes for `many`. For `oneToOne`, the reverse relation can be accessed by just the model name the field was declared on: `author.book`.
 
 For `many` field declarations, accessing the field on a Model instance will return a `QuerySet` with two additional methods: `add` and `remove`. They take 1 or more arguments, where the arguments are either Model instances or their id's. Calling these methods records updates that will be reflected in the next state.
 
-When declaring model classes, always remember to set the `modelName` property. It needs to be set explicitly, because running your code through a mangler would otherwise break functionality. The `modelName` will be used to resolve all related fields. 
+When declaring model classes, always remember to set the `modelName` property. It needs to be set explicitly, because running your code through a mangler would otherwise break functionality. The `modelName` will be used to resolve all related fields.
 
 **Declaring `modelName`**:
 ```javascript
@@ -471,7 +472,7 @@ Book.modelName = 'Book';
 If you need to specify options to the redux-orm database, you can declare a static `options` property on the Model class with an object key. Currently you can specify the id attribute name:
 
 ```javascript
-// This is the default value. 
+// This is the default value.
 Book.options = {
     idAttribute: 'id',
 };
@@ -663,7 +664,7 @@ would try to define the reverse field `b` on `A` twice, throwing an error with a
 
 **Breaking changes**:
 
-- `Model.withId(id)` now throws if object with id `id` does not exist in the database. 
+- `Model.withId(id)` now throws if object with id `id` does not exist in the database.
 
 ### 0.2.0
 
