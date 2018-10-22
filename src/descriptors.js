@@ -254,7 +254,7 @@ function manyToManyDescriptor(
                     through => idsToRemove.has(through[otherReferencingField])
                 );
 
-                if (entitiesToDelete.count() !== idsToRemove.size) {
+                if (entitiesToDelete.count() < idsToRemove.size) {
                     // Tried deleting non-existing entities.
                     const entitiesToDeleteIds = entitiesToDelete
                         .toRefArray()

@@ -1,6 +1,6 @@
 {
   "name": "redux-orm-flex",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A Redux ORM fork. This fork allows models to have FK to null objects, which is usual in an async world.",
   "main": "lib/index.js",
   "module": "es/index.js",
