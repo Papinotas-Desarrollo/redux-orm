@@ -1,5 +1,4 @@
 module.exports = {
-    testEnvironment: 'node',
     coverageDirectory: './coverage/',
     collectCoverage: true,
     collectCoverageFrom: [
@@ -14,13 +13,14 @@ module.exports = {
         },
     },
     moduleFileExtensions: [
-        'ts',
         'js',
         'json',
     ],
-    testRegex: 'src/test/test(.*)\\.(js|ts)',
+    testPathIgnorePatterns: [
+        'src/test/functional/es5\\.(js)',
+    ],
+    testRegex: 'src/test/(.*)/(.*)\\.(js)',
     transform: {
-        '\\.ts?$': './node_modules/typescript-babel-jest',
-        '\\.js$': './node_modules/babel-jest',
+        '\\.js$': 'babel-jest',
     },
 };

@@ -1,5 +1,6 @@
 redux-orm-flex
-===============
+
+=======
 
 ## Important
 
@@ -9,17 +10,13 @@ This repo was forked from [Redux ORM](https://github.com/tommikaikkonen/redux-or
 
 A small, simple and immutable ORM to manage relational data in your Redux store.
 
-See a [a guide to creating a simple app with Redux-ORM](https://github.com/tommikaikkonen/redux-orm-primer) (includes the source). Its README is not updated for 0.9 yet but the [code has a branch for it](https://github.com/tommikaikkonen/redux-orm-primer/tree/migrate_to_0_9).
+See [a guide to creating a simple app with Redux-ORM](https://github.com/tommikaikkonen/redux-orm-primer) (includes the source). Its README is not updated for 0.9 yet but the [code has a branch for it](https://github.com/tommikaikkonen/redux-orm-primer/tree/migrate_to_0_9).
 
-**The 0.9 which is in the release candidate stage, brings big breaking changes to the API. Please look at the [migration guide](https://github.com/tommikaikkonen/redux-orm/wiki/0.9-Migration-Guide) if you're migrating from earlier versions.**
+**The 0.9.x versions bring big breaking changes to the API. Please look at the [migration guide](https://github.com/tommikaikkonen/redux-orm/wiki/0.9-Migration-Guide) if you're migrating from earlier versions.**
 
 Looking for the 0.8 docs? Read the [old README.md in the repo](https://github.com/tommikaikkonen/redux-orm/tree/3c36fa804d2810b2aaaad89ff1d99534b847ea35). For the API reference, clone the repo, `npm install`, `make build` and open up `index.html` in your browser. Sorry for the inconvenience.
 
-API can be unstable until 1.0.0. Minor version bumps before 1.0.0 can and will introduce breaking changes. They will be noted in the [changelog](https://github.com/tommikaikkonen/redux-orm#changelog).
-
-## Extensions
-
-- [`redux-orm-proptypes`](https://github.com/tommikaikkonen/redux-orm-proptypes): React PropTypes validation and defaultProps mixin for Redux-ORM Models
+API can be unstable until 1.0.0. Minor version bumps before 1.0.0 can and will introduce breaking changes. They will be noted in the [changelog](https://github.com/tommikaikkonen/redux-orm/blob/master/CHANGELOG.md).
 
 ## Installation
 
@@ -30,7 +27,7 @@ npm install redux-orm-flex --save
 Or with a script tag
 
 ```html
-<script src="https://tommikaikkonen.github.io/redux-orm/dist/redux-orm.js"></script>
+<script src="https://tommikaikkonen.github.io/redux-orm/dist/redux-orm.min.js"></script>
 ```
 
 - [Browser build following master](https://tommikaikkonen.github.io/redux-orm/dist/redux-orm.js)
@@ -38,13 +35,17 @@ Or with a script tag
 
 ### Polyfill
 
-`redux-orm` uses some ES2015 features, such as `Set`. If you are using `redux-orm` in a pre-ES2015 environment, you should load a polyfill like [`babel-polyfill`](https://babeljs.io/docs/usage/polyfill/) before using `redux-orm`.
+Redux-ORM uses some ES2015+ features, such as `Set`. If you are using Redux-ORM in a pre-ES2015+ environment, you should load a polyfill like [`babel-polyfill`](https://babeljs.io/docs/usage/polyfill/) before using Redux-ORM.
+
+### Extensions
+
+- [`redux-orm-proptypes`](https://github.com/tommikaikkonen/redux-orm-proptypes): React PropTypes validation and defaultProps mixin for Redux-ORM Models
 
 ## Usage
 
 ### Declare Your Models
 
-You can declare your models with the ES6 class syntax, extending from `Model`. You need to declare all your non-relational fields on the Model, and declaring all data fields is recommended as the library doesn't have to redefine getters and setters when instantiating Models. `redux-orm` supports one-to-one and many-to-many relations in addition to foreign keys (`oneToOne`, `many` and `fk` imports respectively). Non-related properties can be accessed like in normal JavaScript objects.
+You can declare your models with the ES6 class syntax, extending from `Model`. You need to declare all your non-relational fields on the Model, and declaring all data fields is recommended as the library doesn't have to redefine getters and setters when instantiating Models. Redux-ORM supports one-to-one and many-to-many relations in addition to foreign keys (`oneToOne`, `many` and `fk` imports respectively). Non-related properties can be accessed like in normal JavaScript objects.
 
 ```javascript
 // models.js
@@ -65,6 +66,8 @@ Book.fields = {
     authors: many('Author', 'books'),
     publisher: fk('Publisher', 'books'),
 };
+
+export default Book;
 ```
 
 ### Register Models and Generate an Empty Database State
@@ -115,7 +118,7 @@ Models provide an interface to query and update the database state.
 ```javascript
 Book.withId(1).update({ name: 'Clean Code' });
 Book.all().filter(book => book.name === 'Clean Code').delete();
-Book.hasId(1)
+Book.idExists(1)
 // false
 ```
 
@@ -237,7 +240,7 @@ As you can see, it just instantiates a new Session, loops through all the Models
 
 ### Use with React
 
-Use memoized selectors to make queries into the state. `redux-orm` uses smart memoization: the below selector accesses `Author` and `AuthorBooks` branches (`AuthorBooks` is a many-to-many branch generated from the model field declarations), and the selector will be recomputed only if those branches change. The accessed branches are resolved on the first run.
+Use memoized selectors to make queries into the state. Redux-ORM uses smart memoization: the below selector accesses `Author` and `AuthorBooks` branches (`AuthorBooks` is a many-to-many branch generated from the model field declarations), and the selector will be recomputed only if those branches change. The accessed branches are resolved on the first run.
 
 ```javascript
 // selectors.js
@@ -273,7 +276,7 @@ const authorSelector = createSelector(
 //   {
 //     id: 0,
 //     name: 'Tommi Kaikkonen',
-//     books: ['Introduction to redux-orm', 'Developing Redux applications'],
+//     books: ['Introduction to Redux-ORM', 'Developing Redux applications'],
 //   },
 //   {
 //     id: 1,
@@ -289,11 +292,11 @@ Because selectors are memoized, you can use pure rendering in React for performa
 
 ```jsx
 // components.js
-import PureComponent from 'react-pure-render/component';
+import React from 'react';
 import { authorSelector } from './selectors';
 import { connect } from 'react-redux';
 
-class App extends PureComponent {
+class App extends React.PureComponent {
     render() {
         const authors = this.props.authors.map(author => {
             return (
@@ -320,15 +323,15 @@ function mapStateToProps(state) {
 export default connect(mapStateToProps)(App);
 ```
 
-## Understanding redux-orm
+## Understanding Redux-ORM
 
 ### An ORM?
 
-Well, yeah. `redux-orm` deals with related data, structured similar to a relational database. The database in this case is a simple JavaScript object database.
+Well, yeah. Redux-ORM deals with related data, structured similar to a relational database. The database in this case is a simple JavaScript object database.
 
 ### Why?
 
-For simple apps, writing reducers by hand is alright, but when the number of object types you have increases and you need to maintain relations between them, things get hairy. ImmutableJS goes a long way to reduce complexity in your reducers, but `redux-orm` is specialized for relational data.
+For simple apps, writing reducers by hand is alright, but when the number of object types you have increases and you need to maintain relations between them, things get hairy. ImmutableJS goes a long way to reduce complexity in your reducers, but Redux-ORM is specialized for relational data.
 
 ### Immutability
 
@@ -390,7 +393,9 @@ Just like you can extend `Model`, you can do the same for `QuerySet` (customize 
 
 ### Caveats
 
-The ORM abstraction will never be as performant compared to writing reducers by hand, and adds to the build size of your project (last I checked, minimizing the source files and gzipping yielded about 8 KB). If you have very simple data without relations, `redux-orm` may be overkill. The development convenience benefit is considerable though.
+![gzip size](https://img.shields.io/bundlephobia/minzip/redux-orm.svg?style=flat-square)
+
+The ORM abstraction will never be as performant compared to writing reducers by hand, and adds to the build size of your project. If you have very simple data without relations, Redux-ORM may be overkill. The development convenience benefit is considerable though.
 
 ## API
 
@@ -418,17 +423,18 @@ Instance methods:
 
 See the full documentation for `Model` [here](http://tommikaikkonen.github.io/redux-orm/Model.html).
 
-**Instantiation**: Don't instantiate directly; use class method `create`.
+**Instantiation**: Don't instantiate directly; use the class methods `create` and `upsert` as documented below.
 
 **Class Methods**:
 
-- `hasId(id)`: returns a boolean indicating if entity with id `id` exists in the state.
 - `withId(id)`: gets the Model instance with id `id`.
-- `get(matchObj)`: to get a Model instance based on matching properties in `matchObj`,
-- `create(props)`: to create a new Model instance with `props`. If you don't supply an id, the new `id` will be `Math.max(...allOtherIds) + 1`.
-- `upsert(props)`: to create a new Model instance with `props` or to update a existing Model with same `id` - by other words its **create or update** behaviour.
+- `idExists(id)`: returns a boolean indicating if an entity with id `id` exists in the state.
+- `exists(matchObj)`: returns a boolean indicating if an entity whose properties match `matchObj` exists in the state.
+- `get(matchObj)`: gets a Model instance based on matching properties in `matchObj` (if you are sure there is only one matching instance).
+- `create(props)`: creates a new Model instance with `props`. If you don't supply an id, the new `id` will be `Math.max(...allOtherIds) + 1`.
+- `upsert(props)`: either creates a new Model instance with `props` or, in case an instance with the same id already exists, updates that one - in other words it's **create or update** behaviour.
 
-You will also have access to almost all [QuerySet instance methods](http://tommikaikkonen.github.io/redux-orm/QuerySet.html) from the class object for convenience.
+You will also have access to almost all [QuerySet instance methods](http://tommikaikkonen.github.io/redux-orm/QuerySet.html) from the class object for convenience, including `where` and the like.
 
 **Instance Attributes**:
 - `ref`: returns a direct reference to the plain JavaScript object representing the Model instance in the store.
@@ -486,7 +492,7 @@ Book.modelName = 'Book';
 
 **Declaring `options`**
 
-If you need to specify options to the redux-orm database, you can declare a static `options` property on the Model class with an object key. Currently you can specify the id attribute name:
+If you need to specify options to the Redux-ORM database, you can declare a static `options` property on the Model class with an object key. Currently you can specify the id attribute name:
 
 ```javascript
 // This is the default value.
@@ -507,7 +513,7 @@ You can access all of these methods straight from a `Model` class, as if they we
 - `toModelArray()`: returns the objects represented by the `QuerySet` as an array of `Model` instances objects.
 - `count()`: returns the number of `Model` instances in the `QuerySet`.
 - `exists()`: return `true` if number of entities is more than 0, else `false`.
-- `filter(filterArg)`: returns a new `QuerySet` representing the records from the parent QuerySet that pass the filter. For `filterArg`, you can either pass an object that `redux-orm` tries to match to the entities, or a function that returns `true` if you want to have it in the new `QuerySet`, `false` if not. The function receives a model instance as its sole argument.
+- `filter(filterArg)`: returns a new `QuerySet` representing the records from the parent QuerySet that pass the filter. For `filterArg`, you can either pass an object that Redux-ORM tries to match to the entities, or a function that returns `true` if you want to have it in the new `QuerySet`, `false` if not. The function receives a model instance as its sole argument.
 - `exclude` returns a new `QuerySet` represeting entities in the parent QuerySet that do not pass the filter. Similarly to `filter`, you may pass an object for matching (all entities that match will not be in the new `QuerySet`) or a function. The function receives a model instance as its sole argument.
 - `all()` returns a new `QuerySet` with the same entities.
 - `at(index)` returns an `Model` instance at the supplied `index` in the `QuerySet`.
@@ -697,7 +703,8 @@ Includes various bugfixes and improvements.
 - Removed `.fromEmpty()` instance method from `Schema`.
 - Removed `.setReducer()` instance method from `Schema`. You can just do `ModelClass.reducer = reducerFunc;`.
 
+See [`CHANGELOG.md`](https://github.com/tommikaikkonen/redux-orm/blob/master/CHANGELOG.md).
 
 ## License
 
-MIT. See `LICENSE`
+MIT. See [`LICENSE`](https://github.com/tommikaikkonen/redux-orm/blob/master/LICENSE).

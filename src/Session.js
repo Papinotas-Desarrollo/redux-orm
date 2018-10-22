@@ -1,7 +1,7 @@
 import { getBatchToken } from 'immutable-ops';
 
-import { SUCCESS } from './constants';
-import { warnDeprecated } from './utils';
+import { SUCCESS, UPDATE, DELETE } from './constants';
+import { warnDeprecated, clauseFiltersByAttribute } from './utils';
 
 const Session = class Session {
     /**
@@ -22,30 +22,24 @@ const Session = class Session {
         this.withMutations = !!withMutations;
         this.batchToken = batchToken || getBatchToken();
 
-        this._accessedModels = {};
         this.modelData = {};
 
         this.models = schema.getModelClasses();
 
         this.sessionBoundModels = this.models.map((modelClass) => {
-            const sessionBoundModel = class SessionBoundModel extends modelClass {};
+            function SessionBoundModel() {
+                return Reflect.construct(modelClass, arguments, SessionBoundModel); // eslint-disable-line prefer-rest-params
+            }
+            Reflect.setPrototypeOf(SessionBoundModel.prototype, modelClass.prototype);
+            Reflect.setPrototypeOf(SessionBoundModel, modelClass);
+
             Object.defineProperty(this, modelClass.modelName, {
-                get: () => sessionBoundModel,
+                get: () => SessionBoundModel,
             });
 
-            sessionBoundModel.connect(this);
-            return sessionBoundModel;
+            SessionBoundModel.connect(this);
+            return SessionBoundModel;
         });
-    }
-
-    markAccessed(modelName) {
-        this.getDataForModel(modelName).accessed = true;
-    }
-
-    get accessedModels() {
-        return this.sessionBoundModels
-            .filter(model => !!this.getDataForModel(model.modelName).accessed)
-            .map(model => model.modelName);
     }
 
     getDataForModel(modelName) {
@@ -53,6 +47,39 @@ const Session = class Session {
             this.modelData[modelName] = {};
         }
         return this.modelData[modelName];
+    }
+
+    markAccessed(modelName, modelIds) {
+        const data = this.getDataForModel(modelName);
+        if (!data.accessedInstances) {
+            data.accessedInstances = {};
+        }
+        modelIds.forEach((id) => {
+            data.accessedInstances[id] = true;
+        });
+    }
+
+    get accessedModelInstances() {
+        return this.sessionBoundModels
+            .filter(({ modelName }) => !!this.getDataForModel(modelName).accessedInstances)
+            .reduce(
+                (result, { modelName }) => ({
+                    ...result,
+                    [modelName]: this.getDataForModel(modelName).accessedInstances,
+                }),
+                {}
+            );
+    }
+
+    markFullTableScanned(modelName) {
+        const data = this.getDataForModel(modelName);
+        data.fullTableScanned = true;
+    }
+
+    get fullTableScannedModels() {
+        return this.sessionBoundModels
+            .filter(({ modelName }) => !!this.getDataForModel(modelName).fullTableScanned)
+            .map(({ modelName }) => modelName);
     }
 
     /**
@@ -63,28 +90,80 @@ const Session = class Session {
      *                          `type`, `payload`.
      */
     applyUpdate(updateSpec) {
-        const { batchToken, withMutations } = this;
-        const tx = { batchToken, withMutations };
+        const tx = this._getTransaction(updateSpec);
         const result = this.db.update(updateSpec, tx, this.state);
-        const { status, state } = result;
+        const { status, state, payload } = result;
 
-        if (status === SUCCESS) {
-            this.state = state;
-        } else {
-            throw new Error(`Applying update failed: ${result.toString()}`);
+        if (status !== SUCCESS) {
+            throw new Error(`Applying update failed with status ${status}. Payload: ${payload}`);
         }
 
-        return result.payload;
+        this.state = state;
+
+        return payload;
     }
 
     query(querySpec) {
-        const { table } = querySpec;
-        this.markAccessed(table);
-        return this.db.query(querySpec, this.state);
+        const result = this.db.query(querySpec, this.state);
+
+        this._markAccessedByQuery(querySpec, result);
+
+        return result;
+    }
+
+    _getTransaction(updateSpec) {
+        const { withMutations } = this;
+        const { action } = updateSpec;
+        let { batchToken } = this;
+        if ([UPDATE, DELETE].includes(action)) {
+            batchToken = getBatchToken();
+        }
+        return { batchToken, withMutations };
+    }
+
+    _markAccessedByQuery(querySpec, result) {
+        const { table, clauses } = querySpec;
+        const { rows } = result;
+
+        const { idAttribute } = this[table];
+        const accessedIds = new Set(rows.map(
+            row => row[idAttribute]
+        ));
+
+        const anyClauseFilteredById = clauses.some((clause) => {
+            if (!clauseFiltersByAttribute(clause, idAttribute)) {
+                return false;
+            }
+            /**
+             * we previously knew which row we wanted to access,
+             * so there was no need to scan the entire table
+             */
+            const id = clause.payload[idAttribute];
+            accessedIds.add(id);
+            return true;
+        });
+
+        if (anyClauseFilteredById) {
+            /**
+             * clauses have been ordered so that an indexed one was
+             * the first to be evaluated, and thus only the row
+             * with the specified id has actually been accessed
+             */
+            this.markAccessed(table, accessedIds);
+        } else {
+            /**
+             * any other clause would have caused a full table scan,
+             * even if we specified an empty clauses array
+             */
+            this.markFullTableScanned(table);
+        }
     }
 
     // DEPRECATED AND REMOVED METHODS
 
+    /**
+     * @deprecated Access {@link Session#state} instead.
+     */
     getNextState() {
         warnDeprecated(
             'Session.prototype.getNextState function is deprecated. Access ' +
@@ -93,6 +172,11 @@ const Session = class Session {
         return this.state;
     }
 
+    /**
+     * @deprecated
+     * The Redux integration API is now decoupled from ORM and Session.<br>
+     * See the 0.9 migration guide in the GitHub repo.
+     */
     reduce() {
         throw new Error(
             'Session.prototype.reduce is removed. The Redux integration API ' +

@@ -1,7 +1,7 @@
 import deepFreeze from 'deep-freeze';
-import Table from '../db/Table';
-import { getBatchToken } from '../utils';
-import { FILTER, EXCLUDE, ORDER_BY } from '../constants';
+import Table from '../../db/Table';
+import { getBatchToken } from '../../utils';
+import { FILTER, EXCLUDE, ORDER_BY } from '../../constants';
 
 describe('Table', () => {
     describe('prototype methods', () => {
@@ -118,8 +118,39 @@ describe('Table', () => {
         it('filter works correctly with object argument', () => {
             const clauses = [{ type: FILTER, payload: { data: 'verycooldata!' } }];
             const result = table.query(state, clauses);
-            expect(result.length).toBe(1);
+            expect(result).toHaveLength(1);
             expect(result[0]).toBe(state.itemsById[1]);
+        });
+
+        it('filter works correctly with "idAttribute" is "name" and filter argument is a function', () => {
+            state = deepFreeze({
+                items: ['work', 'personal', 'urgent'],
+                itemsById: {
+                    work: {
+                        name: 'work',
+                    },
+                    personal: {
+                        name: 'personal',
+                    },
+                    urgent: {
+                        name: 'urgent',
+                    },
+                },
+                meta: {},
+            });
+            table = new Table({ idAttribute: 'name' });
+            const clauses = [
+                {
+                    type: FILTER,
+                    payload: (attrs) =>
+                        ['work', 'urgent']
+                            .indexOf(attrs[table.idAttribute]) > -1
+                }
+            ];
+            const result = table.query(state, clauses);
+            expect(result).toHaveLength(2);
+            expect(result[0]).toBe(state.itemsById.work);
+            expect(result[1]).toBe(state.itemsById.urgent);
         });
 
         it('orderBy works correctly with prop argument', () => {
@@ -137,7 +168,7 @@ describe('Table', () => {
         it('exclude works correctly with object argument', () => {
             const clauses = [{ type: EXCLUDE, payload: { data: 'verycooldata!' } }];
             const result = table.query(state, clauses);
-            expect(result.length).toBe(2);
+            expect(result).toHaveLength(2);
             expect(result.map(row => row.id)).toEqual([0, 2]);
         });
 
@@ -152,8 +183,8 @@ describe('Table', () => {
 
         it('query works with an id filter for a row which is not in the current result set', () => {
             const clauses = [
-              { type: FILTER, payload: row => row.id !== 1 },
-              { type: FILTER, payload: { id: 1 } },
+                { type: FILTER, payload: row => row.id !== 1 },
+                { type: FILTER, payload: { id: 1 } },
             ];
             const result = table.query(state, clauses);
             expect(result).toHaveLength(0);

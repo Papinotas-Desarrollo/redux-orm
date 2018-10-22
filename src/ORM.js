@@ -40,7 +40,7 @@ const ORM_DEFAULTS = {
  * Internally, this class handles generating a schema specification from models
  * to the database.
  */
-export const ORM = class ORM {
+export class ORM {
     /**
      * Creates a new ORM instance.
      */
@@ -64,6 +64,10 @@ export const ORM = class ORM {
      */
     register(...models) {
         models.forEach((model) => {
+            if (model.modelName === undefined) {
+                throw new Error('A model was passed that doesn\'t have a modelName set');
+            }
+
             model.invalidateClassCache();
 
             this.registerManyToManyModelsFor(model);
@@ -72,29 +76,56 @@ export const ORM = class ORM {
     }
 
     registerManyToManyModelsFor(model) {
-        const fields = model.fields;
+        const { fields } = model;
         const thisModelName = model.modelName;
 
         forOwn(fields, (fieldInstance, fieldName) => {
-            if (fieldInstance instanceof ManyToMany && !fieldInstance.through) {
-                let toModelName;
-                if (fieldInstance.toModelName === 'this') {
-                    toModelName = thisModelName;
-                } else {
-                    toModelName = fieldInstance.toModelName;
+            if (!(fieldInstance instanceof ManyToMany)) {
+                return;
+            }
+
+            let toModelName;
+            if (fieldInstance.toModelName === 'this') {
+                toModelName = thisModelName;
+            } else {
+                toModelName = fieldInstance.toModelName; // eslint-disable-line prefer-destructuring
+            }
+
+            const selfReferencing = thisModelName === toModelName;
+            const fromFieldName = m2mFromFieldName(thisModelName);
+            const toFieldName = m2mToFieldName(toModelName);
+
+            if (fieldInstance.through) {
+                if (selfReferencing && !fieldInstance.throughFields) {
+                    throw new Error(
+                        'Self-referencing many-to-many relationship at ' +
+                        `"${thisModelName}.${fieldName}" using custom ` +
+                        `model "${fieldInstance.through}" has no ` +
+                        'throughFields key. Cannot determine which ' +
+                        'fields reference the instances partaking ' +
+                        'in the relationship.'
+                    );
                 }
-
-                const fromFieldName = m2mFromFieldName(thisModelName);
-                const toFieldName = m2mToFieldName(toModelName);
-
+            } else {
                 const Through = class ThroughModel extends Model {};
 
                 Through.modelName = m2mName(thisModelName, fieldName);
 
+                const PlainForeignKey = class ThroughForeignKeyField extends ForeignKey {
+                    get installsBackwardsVirtualField() {
+                        return false;
+                    }
+                    get installsBackwardsDescriptor() {
+                        return false;
+                    }
+                };
+                const ForeignKeyClass = selfReferencing
+                    ? PlainForeignKey
+                    : ForeignKey;
                 Through.fields = {
                     id: attr(),
-                    [fromFieldName]: new ForeignKey(thisModelName),
-                    [toFieldName]: new ForeignKey(toModelName),
+                    [fromFieldName]: new ForeignKeyClass(thisModelName),
+                    [toFieldName]: new ForeignKeyClass(toModelName),
                 };
 
                 Through.invalidateClassCache();
@@ -125,40 +156,6 @@ export const ORM = class ORM {
         this._setupModelPrototypes(this.registry);
         this._setupModelPrototypes(this.implicitThroughModels);
         return this.registry.concat(this.implicitThroughModels);
-    }
-
-    _attachQuerySetMethods(model) {
-        const { querySetClass } = model;
-        attachQuerySetMethods(model, querySetClass);
-    }
-
-    isFieldInstalled(modelName, fieldName) {
-        return this.installedFields.hasOwnProperty(modelName)
-            ? !!this.installedFields[modelName][fieldName]
-            : false;
-    }
-
-    setFieldInstalled(modelName, fieldName) {
-        if (!this.installedFields.hasOwnProperty(modelName)) {
-            this.installedFields[modelName] = {};
-        }
-        this.installedFields[modelName][fieldName] = true;
-    }
-
-    _setupModelPrototypes(models) {
-        models.forEach((model) => {
-            if (!model.isSetUp) {
-                const fields = model.fields;
-                forOwn(fields, (fieldInstance, fieldName) => {
-                    if (!this.isFieldInstalled(model.modelName, fieldName)) {
-                        fieldInstance.install(model, fieldName, this);
-                        this.setFieldInstalled(model.modelName, fieldName);
-                    }
-                });
-                this._attachQuerySetMethods(model);
-                model.isSetUp = true;
-            }
-        });
     }
 
     generateSchemaSpec() {
@@ -207,17 +204,74 @@ export const ORM = class ORM {
         return new Session(this, this.getDatabase(), state, true);
     }
 
+    /**
+     * @private
+     */
+    _setupModelPrototypes(models) {
+        models.forEach((model) => {
+            if (!model.isSetUp) {
+                const { fields, modelName, querySetClass } = model;
+                forOwn(fields, (field, fieldName) => {
+                    if (!this._isFieldInstalled(modelName, fieldName)) {
+                        this._installField(field, fieldName, model);
+                        this._setFieldInstalled(modelName, fieldName);
+                    }
+                });
+                attachQuerySetMethods(model, querySetClass);
+                model.isSetUp = true;
+            }
+        });
+    }
+
+    /**
+     * @private
+     */
+    _isFieldInstalled(modelName, fieldName) {
+        return this.installedFields.hasOwnProperty(modelName)
+            ? !!this.installedFields[modelName][fieldName]
+            : false;
+    }
+
+    /**
+     * @private
+     */
+    _setFieldInstalled(modelName, fieldName) {
+        if (!this.installedFields.hasOwnProperty(modelName)) {
+            this.installedFields[modelName] = {};
+        }
+        this.installedFields[modelName][fieldName] = true;
+    }
+
+    /**
+     * Installs a field on a model and its related models if necessary.
+     * @private
+     */
+    _installField(field, fieldName, model) {
+        const FieldInstaller = field.installerClass;
+        (new FieldInstaller({
+            field,
+            fieldName,
+            model,
+            orm: this,
+        })).run();
+    }
+
     // DEPRECATED AND REMOVED METHODS
 
+    /**
+     * @deprecated Use {@link ORM#mutableSession} instead.
+     */
     withMutations(state) {
         warnDeprecated(
             'ORM.prototype.withMutations is deprecated. ' +
             'Use ORM.prototype.mutableSession instead.'
         );
-
         return this.mutableSession(state);
     }
 
+    /**
+     * @deprecated Use {@link ORM#session} instead.
+     */
     from(state) {
         warnDeprecated(
             'ORM.prototype.from function is deprecated. ' +
@@ -226,6 +280,9 @@ export const ORM = class ORM {
         return this.session(state);
     }
 
+    /**
+     * @deprecated Access {@link Session#state} instead.
+     */
     reducer() {
         warnDeprecated(
             'ORM.prototype.reducer is deprecated. Access ' +
@@ -234,6 +291,9 @@ export const ORM = class ORM {
         return createReducer(this);
     }
 
+    /**
+     * @deprecated Use `import { createSelector } from "redux-orm"` instead.
+     */
     createSelector(...args) {
         warnDeprecated(
             'ORM.prototype.createSelector is deprecated. ' +
@@ -242,6 +302,9 @@ export const ORM = class ORM {
         return createSelector(this, ...args);
     }
 
+    /**
+     * @deprecated Use {@link ORM#getEmptyState} instead.
+     */
     getDefaultState() {
         warnDeprecated(
             'ORM.prototype.getDefaultState is deprecated. Use ' +
@@ -250,12 +313,15 @@ export const ORM = class ORM {
         return this.getEmptyState();
     }
 
+    /**
+     * @deprecated Define a Model class instead.
+     */
     define() {
         throw new Error(
             'ORM.prototype.define is removed. Please define a Model class.'
         );
     }
-};
+}
 
 export function DeprecatedSchema() {
     throw new Error(

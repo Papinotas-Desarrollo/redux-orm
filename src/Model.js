@@ -19,18 +19,24 @@ import {
 } from './utils';
 
 
-// Generates a query specification
-// to get a single row from a table identified
-// by a primary key.
+/**
+ * Generates a query specification to get the instance's
+ * corresponding table row using its primary key.
+ *
+ * @private
+ * @returns {Object}
+ */
 function getByIdQuery(modelInstance) {
     const modelClass = modelInstance.getClass();
+    const { idAttribute, modelName } = modelClass;
+
     return {
-        table: modelClass.modelName,
+        table: modelName,
         clauses: [
             {
                 type: FILTER,
                 payload: {
-                    [modelClass.idAttribute]: modelInstance.getId(),
+                    [idAttribute]: modelInstance.getId(),
                 },
             },
         ],
@@ -67,7 +73,7 @@ const Model = class Model {
     }
 
     _initFields(props) {
-        this._fields = Object.assign({}, props);
+        this._fields = { ...props };
 
         forOwn(props, (fieldValue, fieldName) => {
             // In this case, we got a prop that wasn't defined as a field.
@@ -106,26 +112,18 @@ const Model = class Model {
         return {};
     }
 
-    static _getTableOpts() {
-        if (typeof this.backend === 'function') {
-            warnDeprecated('Model.backend is deprecated. Please rename to .options');
-            return this.backend();
-        } else if (this.backend) {
-            warnDeprecated('Model.backend is deprecated. Please rename to .options');
-            return this.backend;
-        } else if (typeof this.options === 'function') {
-            return this.options();
-        }
-        return this.options;
+    /**
+     * @return {undefined}
+     */
+    static markAccessed(ids) {
+        this.session.markAccessed(this.modelName, ids);
     }
 
-    static get _sessionData() {
-        if (!this.session) return {};
-        return this.session.getDataForModel(this.modelName);
-    }
-
-    static markAccessed() {
-        this.session.markAccessed(this);
+    /**
+     * @return {undefined}
+     */
+    static markFullTableScanned() {
+        this.session.markFullTableScanned(this.modelName);
     }
 
     /**
@@ -157,78 +155,46 @@ const Model = class Model {
         return this._session;
     }
 
+    /**
+     * Returns an instance of the model's `querySetClass` field.
+     * By default, this will be an empty {@link QuerySet}.
+     *
+     * @return {Object} An instance of the model's `querySetClass`.
+     */
     static getQuerySet() {
-        const QuerySetClass = this.querySetClass;
+        const { querySetClass: QuerySetClass } = this;
         return new QuerySetClass(this);
     }
 
+    /**
+     * @return {undefined}
+     */
     static invalidateClassCache() {
         this.isSetUp = undefined;
         this.virtualFields = {};
     }
 
+    /**
+     * @see {@link Model.getQuerySet}
+     */
     static get query() {
         return this.getQuerySet();
     }
 
     /**
-     * Returns a {@link QuerySet} containing all {@link Model} instances.
-     * @return {QuerySet} a QuerySet containing all {@link Model} instances
+     * @private
      */
-    static all() {
-        return this.getQuerySet();
-    }
-
-    /**
-     * Update many-many relations for model.
-     * @param relations
-     */
-    _refreshMany2Many(relations) {
-        const ThisModel = this.getClass();
-        const fields = ThisModel.fields;
-        const virtualFields = ThisModel.virtualFields;
-
-        Object.keys(relations).forEach((name) => {
-            const reverse = !fields.hasOwnProperty(name);
-            const field = virtualFields[name];
-            const values = relations[name];
-
-            const normalizedNewIds = values.map(normalizeEntity);
-            const uniqueIds = uniq(normalizedNewIds);
-
-            if (normalizedNewIds.length !== uniqueIds.length) {
-                throw new Error(`Found duplicate id(s) when passing "${normalizedNewIds}" to ${ThisModel.modelName}.${name} value`);
-            }
-
-            const throughModelName = field.through || m2mName(ThisModel.modelName, name);
-            const ThroughModel = ThisModel.session[throughModelName];
-
-            let fromField;
-            let toField;
-
-            if (!reverse) {
-                ({ from: fromField, to: toField } = field.throughFields);
-            } else {
-                ({ from: toField, to: fromField } = field.throughFields);
-            }
-
-            const currentIds = ThroughModel.filter(through =>
-                through[fromField] === this[ThisModel.idAttribute]
-            ).toRefArray().map(ref => ref[toField]);
-
-            const diffActions = arrayDiffActions(currentIds, normalizedNewIds);
-
-            if (diffActions) {
-                const idsToDelete = diffActions.delete;
-                const idsToAdd = diffActions.add;
-                if (idsToDelete.length > 0) {
-                    this[name].remove(...idsToDelete);
-                }
-                if (idsToAdd.length > 0) {
-                    this[name].add(...idsToAdd);
-                }
-            }
-        });
+    static _getTableOpts() {
+        if (typeof this.backend === 'function') {
+            warnDeprecated('Model.backend is deprecated. Please rename to .options');
+            return this.backend();
+        } else if (this.backend) {
+            warnDeprecated('Model.backend is deprecated. Please rename to .options');
+            return this.backend;
+        } else if (typeof this.options === 'function') {
+            return this.options();
+        }
+        return this.options;
     }
 
     /**
@@ -241,7 +207,7 @@ const Model = class Model {
      * @return {Model} a new {@link Model} instance.
      */
     static create(userProps) {
-        const props = Object.assign({}, userProps);
+        const props = { ...userProps };
 
         const m2mRelations = {};
 
@@ -301,11 +267,14 @@ const Model = class Model {
      * @return {Model} a {@link Model} instance.
      */
     static upsert(userProps) {
-        const idAttr = this.idAttribute;
-        if (userProps.hasOwnProperty(idAttr) && this.hasId(userProps[idAttr])) {
-            const model = this.withId(userProps[idAttr]);
-            model.update(userProps);
-            return model;
+        const { idAttribute } = this;
+        if (userProps.hasOwnProperty(idAttribute)) {
+            const id = userProps[idAttribute];
+            if (this.idExists(id)) {
+                const model = this.withId(id);
+                model.update(userProps);
+                return model;
+            }
         }
 
         return this.create(userProps);
@@ -313,65 +282,61 @@ const Model = class Model {
 
     /**
      * Returns a {@link Model} instance for the object with id `id`.
-     * This throws if the `id` doesn't exist. Use {@link Model#hasId}
-     * to check for existence first if you're not certain.
+     * Returns `null` if the model has no instance with id `id`.
+     *
+     * You can use {@link Model#idExists} to check for existence instead.
      *
      * @param  {*} id - the `id` of the object to get
      * @throws If object with id `id` doesn't exist
-     * @return {Model} {@link Model} instance with id `id`
+     * @return {Model|null} {@link Model} instance with id `id`
      */
     static withId(id) {
-        const ModelClass = this;
-        const rows = this._findDatabaseRows({ [ModelClass.idAttribute]: id });
-        if (rows.length === 0) {
-            return null;
-        }
-
-        return new ModelClass(rows[0]);
+        return this.get({
+            [this.idAttribute]: id,
+        });
     }
 
     /**
-     * Returns a boolean indicating if an entity with the id `id` exists
-     * in the state.
+     * Returns a boolean indicating if an entity
+     * with the id `id` exists in the state.
      *
      * @param  {*}  id - a value corresponding to the id attribute of the {@link Model} class.
      * @return {Boolean} a boolean indicating if entity with `id` exists in the state
+     *
+     * @since 0.11.0
      */
-    static hasId(id) {
-        const rows = this._findDatabaseRows({ [this.idAttribute]: id });
-        return rows.length === 1;
+    static idExists(id) {
+        return this.exists({
+            [this.idAttribute]: id,
+        });
     }
 
-    static _findDatabaseRows(lookupObj) {
-        const ModelClass = this;
-        return ModelClass
-            .session
-            .query({
-                table: ModelClass.modelName,
-                clauses: [
-                    {
-                        type: FILTER,
-                        payload: lookupObj,
-                    },
-                ],
-            }).rows;
+    /**
+     * Returns a boolean indicating if an entity
+     * with the given props exists in the state.
+     *
+     * @param  {*}  props - a key-value that {@link Model} instances should have to be considered as existing.
+     * @return {Boolean} a boolean indicating if entity with `props` exists in the state
+     */
+    static exists(lookupObj) {
+        return Boolean(this._findDatabaseRows(lookupObj).length);
     }
 
     /**
      * Gets the {@link Model} instance that matches properties in `lookupObj`.
-     * Throws an error if {@link Model} is not found, or multiple records match
+     * Throws an error if {@link Model} if multiple records match
      * the properties.
      *
      * @param  {Object} lookupObj - the properties used to match a single entity.
-     * @return {Model} a {@link Model} instance that matches `lookupObj` properties.
+     * @throws {Error} If more than one entity matches the properties in `lookupObj`.
+     * @return {Model} a {@link Model} instance that matches the properties in `lookupObj`.
      */
     static get(lookupObj) {
         const ModelClass = this;
 
         const rows = this._findDatabaseRows(lookupObj);
-
         if (rows.length === 0) {
-            throw new Error('Model instance not found when calling get method');
+            return null;
         } else if (rows.length > 1) {
             throw new Error(`Expected to find a single row in Model.get. Found ${rows.length}.`);
         }
@@ -414,6 +379,29 @@ const Model = class Model {
     }
 
     /**
+     * Finds all rows in this model's table that match the given `lookupObj`.
+     * If no `lookupObj` is passed, all rows in the model's table will be returned.
+     *
+     * @param  {*}  props - a key-value that {@link Model} instances should have to be considered as existing.
+     * @return {Boolean} a boolean indicating if entity with `props` exists in the state
+     * @private
+     */
+    static _findDatabaseRows(lookupObj) {
+        const querySpec = {
+            table: this.modelName,
+        };
+        if (lookupObj) {
+            querySpec.clauses = [
+                {
+                    type: FILTER,
+                    payload: lookupObj,
+                },
+            ];
+        }
+        return this.session.query(querySpec).rows;
+    }
+
+    /**
      * Returns a string representation of the {@link Model} instance.
      *
      * @return {string} A string representation of this {@link Model} instance.
@@ -440,6 +428,10 @@ const Model = class Model {
      * Returns a boolean indicating if `otherModel` equals this {@link Model} instance.
      * Equality is determined by shallow comparing their attributes.
      *
+     * This equality is used when you call {@link Model#update}.
+     * You can prevent model updates by returning `true` here.
+     * However, a model will always be updated if its relationships are changed.
+     *
      * @param  {Model} otherModel - a {@link Model} instance to compare
      * @return {Boolean} a boolean indicating if the {@link Model} instance's are equal.
      */
@@ -457,7 +449,9 @@ const Model = class Model {
      * @return {undefined}
      */
     set(propertyName, value) {
-        this.update({ [propertyName]: value });
+        this.update({
+            [propertyName]: value,
+        });
     }
 
     /**
@@ -468,11 +462,11 @@ const Model = class Model {
      * @return {undefined}
      */
     update(userMergeObj) {
-        const ThisModel = this.getClass();
-        const mergeObj = Object.assign({}, userMergeObj);
+        const mergeObj = { ...userMergeObj };
 
-        const fields = ThisModel.fields;
-        const virtualFields = ThisModel.virtualFields;
+        const ThisModel = this.getClass();
+        const { fields, virtualFields } = ThisModel;
+
         const m2mRelations = {};
 
         // If an array of entities or id's is supplied for a
@@ -502,14 +496,39 @@ const Model = class Model {
             }
         }
 
-        this._initFields(Object.assign({}, this._fields, mergeObj));
-        this._refreshMany2Many(m2mRelations); // eslint-disable-line no-underscore-dangle
+        const mergedFields = {
+            ...this._fields,
+            ...mergeObj,
+        };
 
-        ThisModel.session.applyUpdate({
-            action: UPDATE,
-            query: getByIdQuery(this),
-            payload: mergeObj,
-        });
+        const updatedModel = new ThisModel(this._fields);
+        updatedModel._initFields(mergedFields); // eslint-disable-line no-underscore-dangle
+
+        // determine if model would have different related models after update
+        updatedModel._refreshMany2Many(m2mRelations); // eslint-disable-line no-underscore-dangle
+        const relationsEqual = Object.keys(m2mRelations).every(name =>
+            !arrayDiffActions(this[name], updatedModel[name])
+        );
+        const fieldsEqual = this.equals(updatedModel);
+
+        // only update fields if they have changed (referentially)
+        if (!fieldsEqual) {
+            this._initFields(mergedFields);
+        }
+
+        // only update many-to-many relationships if any reference has changed
+        if (!relationsEqual) {
+            this._refreshMany2Many(m2mRelations);
+        }
+
+        // only apply the update if a field or relationship has changed
+        if (!fieldsEqual || !relationsEqual) {
+            ThisModel.session.applyUpdate({
+                action: UPDATE,
+                query: getByIdQuery(this),
+                payload: mergeObj,
+            });
+        }
     }
 
     /**
@@ -535,8 +554,71 @@ const Model = class Model {
         });
     }
 
+    /**
+     * Update many-many relations for model.
+     * @param relations
+     * @return undefined
+     * @private
+     */
+    _refreshMany2Many(relations) {
+        const ThisModel = this.getClass();
+        const { fields, virtualFields, modelName } = ThisModel;
+
+        Object.keys(relations).forEach((name) => {
+            const reverse = !fields.hasOwnProperty(name);
+            const field = virtualFields[name];
+            const values = relations[name];
+
+            if (!Array.isArray(values)) {
+                throw new TypeError(`Failed to resolve many-to-many relationship: ${modelName}[${name}] must be an array (passed: ${values})`);
+            }
+
+            const normalizedNewIds = values.map(normalizeEntity);
+            const uniqueIds = uniq(normalizedNewIds);
+
+            if (normalizedNewIds.length !== uniqueIds.length) {
+                throw new Error(`Found duplicate id(s) when passing "${normalizedNewIds}" to ${ThisModel.modelName}.${name} value`);
+            }
+
+            const throughModelName = field.through || m2mName(ThisModel.modelName, name);
+            const ThroughModel = ThisModel.session[throughModelName];
+
+            let fromField;
+            let toField;
+
+            if (!reverse) {
+                ({ from: fromField, to: toField } = field.throughFields);
+            } else {
+                ({ from: toField, to: fromField } = field.throughFields);
+            }
+
+            const currentIds = ThroughModel.filter(through =>
+                through[fromField] === this[ThisModel.idAttribute]
+            ).toRefArray().map(ref => ref[toField]);
+
+            const diffActions = arrayDiffActions(currentIds, normalizedNewIds);
+
+            if (diffActions) {
+                const {
+                    delete: idsToDelete,
+                    add: idsToAdd,
+                } = diffActions;
+                if (idsToDelete.length > 0) {
+                    this[name].remove(...idsToDelete);
+                }
+                if (idsToAdd.length > 0) {
+                    this[name].add(...idsToAdd);
+                }
+            }
+        });
+    }
+
+    /**
+     * @return {undefined}
+     * @private
+     */
     _onDelete() {
-        const virtualFields = this.getClass().virtualFields;
+        const { virtualFields } = this.getClass();
         for (const key in virtualFields) { // eslint-disable-line
             const field = virtualFields[key];
             if (field instanceof ManyToMany) {
@@ -559,6 +641,23 @@ const Model = class Model {
 
     // DEPRECATED AND REMOVED METHODS
 
+    /**
+     * Returns a boolean indicating if an entity
+     * with the id `id` exists in the state.
+     *
+     * @param  {*}  id - a value corresponding to the id attribute of the {@link Model} class.
+     * @return {Boolean} a boolean indicating if entity with `id` exists in the state
+     * @deprecated Please use {@link Model.idExists} instead.
+     */
+    static hasId(id) {
+        console.warn('Model.hasId has been deprecated. Please use Model.idExists instead.');
+        return this.idExists(id);
+    }
+
+    /**
+     * @deprecated See the 0.9 migration guide on the GitHub repo.
+     * @throws {Error} Due to deprecation.
+     */
     getNextState() {
         throw new Error(
             'Model.prototype.getNextState is removed. See the 0.9 ' +

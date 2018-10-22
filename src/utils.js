@@ -3,7 +3,11 @@ import includes from 'lodash/includes';
 import ops from 'immutable-ops';
 import intersection from 'lodash/intersection';
 import difference from 'lodash/difference';
+import { FILTER, EXCLUDE } from './constants';
 
+/**
+ * @module utils
+ */
 
 function warnDeprecated(msg) {
     const logger = typeof console.warn === 'function'
@@ -11,10 +15,6 @@ function warnDeprecated(msg) {
         : console.log.bind(console);
     return logger(msg);
 }
-
-/**
- * @module utils
- */
 
 function capitalize(string) {
     return string.charAt(0).toUpperCase() + string.slice(1);
@@ -28,7 +28,6 @@ function capitalize(string) {
  * Example: model `Author` has a many-to-many relation to the model `Book`, defined
  * in the `Author` field `books`. The many-to-many branch name will be `AuthorBooks`.
  *
- * @private
  * @param  {string} declarationModelName - the name of the model the many-to-many relation was declared on
  * @param  {string} fieldName            - the field name where the many-to-many relation was declared on
  * @return {string} The branch name for the many-to-many relation.
@@ -57,7 +56,6 @@ function m2mFromFieldName(declarationModelName) {
  *
  * Example: `Book` => `toBookId`
  *
- * @private
  * @param  {string} otherModelName - the name of the model that was the target of the many-to-many
  *                                   declaration.
  * @return {string} the field name in the through model for `otherModelName`'s foreign key..
@@ -123,7 +121,6 @@ function attachQuerySetMethods(modelClass, querySetClass) {
  * Normalizes `entity` to an id, where `entity` can be an id
  * or a Model instance.
  *
- * @private
  * @param  {*} entity - either a Model instance or an id value
  * @return {*} the id value of `entity`
  */
@@ -172,6 +169,30 @@ function arrayDiffActions(sourceArr, targetArr) {
 
 const { getBatchToken } = ops;
 
+function clauseFiltersByAttribute({ type, payload }, attribute) {
+    if (type !== FILTER) return false;
+
+    if (typeof payload !== 'object') {
+        /**
+         * payload could also be a function in which case
+         * we would have no way of knowing what it does,
+         * so we default to false for non-objects
+         */
+        return false;
+    }
+
+    if (!payload.hasOwnProperty(attribute)) return false;
+    const attributeValue = payload[attribute];
+    if (attributeValue === null) return false;
+    if (attributeValue === undefined) return false;
+
+    return true;
+}
+
+function clauseReducesResultSetSize({ type }) {
+    return [FILTER, EXCLUDE].includes(type);
+}
+
 export {
     attachQuerySetMethods,
     m2mName,
@@ -185,5 +206,7 @@ export {
     includes,
     arrayDiffActions,
     getBatchToken,
+    clauseFiltersByAttribute,
+    clauseReducesResultSetSize,
     warnDeprecated,
 };

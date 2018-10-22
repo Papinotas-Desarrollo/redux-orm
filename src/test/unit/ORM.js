@@ -1,5 +1,5 @@
-import { ORM, Session, Model, oneToOne, fk, many } from '../';
-import { createTestModels } from './utils';
+import { ORM, Session, Model, oneToOne, fk, many } from '../../';
+import { createTestModels } from '../helpers';
 
 describe('ORM', () => {
     it('constructor works', () => {
@@ -51,6 +51,14 @@ describe('ORM', () => {
             orm.register(A, B);
             expect(() => orm.getModelClasses()).toThrowError(/field/);
         });
+
+        it('correctly throws an error when a model does not have a modelName property', () => {
+            class A extends Model {}
+            const orm = new ORM();
+            expect(() => orm.register(A)).toThrowError(
+                "A model was passed that doesn't have a modelName set"
+            );
+        });
     });
 
     describe('simple orm', () => {
@@ -59,6 +67,7 @@ describe('ORM', () => {
         let Author;
         let Cover;
         let Genre;
+        let Tag;
         let Publisher;
         beforeEach(() => {
             ({
@@ -66,6 +75,7 @@ describe('ORM', () => {
                 Author,
                 Cover,
                 Genre,
+                Tag,
                 Publisher,
             } = createTestModels());
 
@@ -98,8 +108,14 @@ describe('ORM', () => {
             expect(orm.get('Book')).toBe(Book);
         });
 
+        it('throws when trying to get inexistant model from registry', () => {
+            expect(() => orm.get('InexistantModel')).toThrowError(
+                'Did not find model InexistantModel from registry.'
+            );
+        });
+
         it('correctly sets model prototypes', () => {
-            orm.register(Book, Author, Cover, Genre, Publisher);
+            orm.register(Book, Author, Cover, Genre, Tag, Publisher);
             expect(Book.isSetUp).toBeFalsy();
 
             let coverDescriptor = Object.getOwnPropertyDescriptor(
@@ -117,6 +133,12 @@ describe('ORM', () => {
                 'genres'
             );
             expect(genresDescriptor).toBeUndefined();
+
+            let tagsDescriptor = Object.getOwnPropertyDescriptor(
+                Book.prototype,
+                'tags'
+            );
+            expect(tagsDescriptor).toBeUndefined();
 
             let publisherDescriptor = Object.getOwnPropertyDescriptor(
                 Book.prototype,
@@ -150,6 +172,13 @@ describe('ORM', () => {
             expect(typeof genresDescriptor.get).toBe('function');
             expect(typeof genresDescriptor.set).toBe('function');
 
+            tagsDescriptor = Object.getOwnPropertyDescriptor(
+                Book.prototype,
+                'tags'
+            );
+            expect(typeof tagsDescriptor.get).toBe('function');
+            expect(typeof tagsDescriptor.set).toBe('function');
+
             publisherDescriptor = Object.getOwnPropertyDescriptor(
                 Book.prototype,
                 'publisher'
@@ -159,7 +188,7 @@ describe('ORM', () => {
         });
 
         it('correctly gets the default state', () => {
-            orm.register(Book, Author, Cover, Genre, Publisher);
+            orm.register(Book, Author, Cover, Genre, Tag, Publisher);
             const defaultState = orm.getEmptyState();
 
             expect(defaultState).toEqual({
@@ -169,6 +198,11 @@ describe('ORM', () => {
                     meta: {},
                 },
                 BookGenres: {
+                    items: [],
+                    itemsById: {},
+                    meta: {},
+                },
+                BookTags: {
                     items: [],
                     itemsById: {},
                     meta: {},
@@ -188,6 +222,16 @@ describe('ORM', () => {
                     itemsById: {},
                     meta: {},
                 },
+                Tag: {
+                    items: [],
+                    itemsById: {},
+                    meta: {},
+                },
+                TagSubTags: {
+                    items: [],
+                    itemsById: {},
+                    meta: {},
+                },
                 Publisher: {
                     items: [],
                     itemsById: {},
@@ -197,7 +241,7 @@ describe('ORM', () => {
         });
 
         it('correctly starts a mutating session', () => {
-            orm.register(Book, Author, Cover, Genre, Publisher);
+            orm.register(Book, Author, Cover, Genre, Tag, Publisher);
             const initialState = orm.getEmptyState();
             const session = orm.mutableSession(initialState);
             expect(session).toBeInstanceOf(Session);
