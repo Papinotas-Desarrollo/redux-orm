@@ -48,12 +48,28 @@ const GENRES_INITIAL = [
     },
 ];
 
+const TAGS_INITIAL = [
+    {
+        name: 'Technology',
+    },
+    {
+        name: 'Literary',
+    },
+    {
+        name: 'Natural',
+    },
+    {
+        name: 'Redux',
+    },
+];
+
 const BOOKS_INITIAL = [
     {
         name: 'Tommi Kaikkonen - an Autobiography',
         author: 0,
         cover: 0,
         genres: [0, 1],
+        tags: ['Technology', 'Literary'],
         releaseYear: 2050,
         publisher: 1,
     },
@@ -62,6 +78,7 @@ const BOOKS_INITIAL = [
         author: 1,
         cover: 1,
         genres: [2],
+        tags: ['Technology'],
         releaseYear: 2008,
         publisher: 0,
     },
@@ -70,6 +87,7 @@ const BOOKS_INITIAL = [
         author: 2,
         cover: 2,
         genres: [2, 3],
+        tags: ['Technology', 'Redux'],
         releaseYear: 2015,
         publisher: 0,
     },
@@ -81,6 +99,20 @@ const PUBLISHERS_INITIAL = [
     },
     {
         name: 'Autobiographies Inc',
+    },
+    {
+        name: 'Paramount Pictures',
+    },
+];
+
+const MOVIES_INITIAL = [
+    {
+        name: 'The Godfather',
+        characters: ['Vito Corleone', 'Tom Hagen', 'Bonasera'],
+        hasPremiered: true,
+        rating: 9.2,
+        meta: {},
+        publisherId: 2,
     },
 ];
 
@@ -94,11 +126,11 @@ export function createTestModels() {
                 author: fk('Author', 'books'),
                 cover: oneToOne('Cover'),
                 genres: many('Genre', 'books'),
+                tags: many('Tag', 'books'),
                 publisher: fk('Publisher', 'books'),
             };
         }
     };
-
     Book.modelName = 'Book';
 
     const Author = class AuthorModel extends Model {
@@ -130,6 +162,18 @@ export function createTestModels() {
         name: attr(),
     };
 
+    const Tag = class TagModel extends Model {};
+    Tag.modelName = 'Tag';
+    Tag.options = {
+        idAttribute: 'name',
+    };
+    Tag.fields = {
+        name: attr(),
+        subTags: many('this', 'parentTags'),
+        // TODO: bidirectional many-to-many relations
+        // synonymousTags: many('Tag', 'synonymousTags'),
+    };
+
     const Publisher = class PublisherModel extends Model {};
     Publisher.modelName = 'Publisher';
     Publisher.fields = {
@@ -137,12 +181,30 @@ export function createTestModels() {
         name: attr(),
     };
 
+    const Movie = class MovieModel extends Model {};
+    Movie.modelName = 'Movie';
+    Movie.fields = {
+        id: attr(),
+        name: attr(),
+        rating: attr(),
+        hasPremiered: attr(),
+        characters: attr(),
+        meta: attr(),
+        publisherId: fk({
+            to: 'Publisher',
+            as: 'publisher',
+            relatedName: 'movie',
+        }),
+    };
+
     return {
         Book,
         Author,
         Cover,
         Genre,
+        Tag,
         Publisher,
+        Movie,
     };
 }
 
@@ -153,32 +215,45 @@ export function createTestORM(customModels) {
         Author,
         Cover,
         Genre,
+        Tag,
         Publisher,
+        Movie,
     } = models;
 
     const orm = new ORM();
-    orm.register(Book, Author, Cover, Genre, Publisher);
+    orm.register(Book, Author, Cover, Genre, Tag, Publisher, Movie);
     return orm;
 }
 
 export function createTestSession() {
     const orm = createTestORM();
-    return orm.session(orm.getEmptytate());
+    return orm.session(orm.getEmptyState());
 }
 
 export function createTestSessionWithData(customORM) {
     const orm = customORM || createTestORM();
     const state = orm.getEmptyState();
-    const { Author, Cover, Genre, Book, Publisher } = orm.mutableSession(state);
+    const {
+        Author, Cover, Genre, Tag, Book, Publisher, Movie
+    } = orm.mutableSession(state);
 
     AUTHORS_INITIAL.forEach(props => Author.create(props));
     COVERS_INITIAL.forEach(props => Cover.create(props));
     GENRES_INITIAL.forEach(props => Genre.create(props));
+    TAGS_INITIAL.forEach(props => Tag.create(props));
     BOOKS_INITIAL.forEach(props => Book.create(props));
     PUBLISHERS_INITIAL.forEach(props => Publisher.create(props));
+    MOVIES_INITIAL.forEach(props => Movie.create(props));
 
     const normalSession = orm.session(state);
     return { session: normalSession, orm, state };
 }
 
 export const isSubclass = (a, b) => a.prototype instanceof b;
+
+export const measureMs = (start) => {
+    if (!start) return process.hrtime();
+    const end = process.hrtime(start);
+    return Math.round((end[0] * 1000) + (end[1] / 1000000));
+};
+

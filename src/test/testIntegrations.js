@@ -1,6 +1,6 @@
 import deepFreeze from 'deep-freeze';
 import { Model, QuerySet, ORM, attr, many, fk } from '../';
-import { createTestSessionWithData } from './utils';
+import { createTestSessionWithData } from './unit/utils';
 
 describe('Integration', () => {
     let session;

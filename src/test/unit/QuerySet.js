@@ -1,19 +1,22 @@
-import { Model, ORM, QuerySet } from '../';
-import { createTestModels, createTestSessionWithData } from './utils';
+import { Model, ORM, QuerySet } from '../../';
+import { createTestModels, createTestSessionWithData } from '../helpers';
 
 describe('QuerySet tests', () => {
     let session;
     let bookQs;
     let genreQs;
+    let tagQs;
     beforeEach(() => {
         ({ session } = createTestSessionWithData());
         bookQs = session.Book.getQuerySet();
         genreQs = session.Genre.getQuerySet();
+        tagQs = session.Tag.getQuerySet();
     });
 
     it('count works correctly', () => {
         expect(bookQs.count()).toBe(3);
         expect(genreQs.count()).toBe(4);
+        expect(tagQs.count()).toBe(4);
     });
 
     it('exists works correctly', () => {
@@ -52,7 +55,7 @@ describe('QuerySet tests', () => {
         all.toRefArray();
 
         expect(all).not.toBe(bookQs);
-        expect(all.rows.length).toBe(bookQs.rows.length);
+        expect(all.rows).toHaveLength(bookQs.rows.length);
 
         for (let i = 0; i < all.rows.length; i++) {
             expect(all.rows[i]).toBe(bookQs.rows[i]);
@@ -93,6 +96,24 @@ describe('QuerySet tests', () => {
         expect(idArr).toEqual([0, 2]);
     });
 
+    it('exclude works correctly with object argument, with model instance value', () => {
+        const excluded = bookQs.exclude({
+            author: session.Author.withId(1),
+        });
+        expect(excluded.count()).toBe(2);
+
+        const idArr = excluded.toRefArray().map(row => row.id);
+        expect(idArr).toEqual([0, 2]);
+    });
+
+    it('exclude works correctly with function argument', () => {
+        const excluded = bookQs.exclude(({ author }) => author === 1);
+        expect(excluded.count()).toBe(2);
+
+        const idArr = excluded.toRefArray().map(row => row.id);
+        expect(idArr).toEqual([0, 2]);
+    });
+
     it('update records a update', () => {
         const mergeObj = { name: 'Updated Book Name' };
         bookQs.update(mergeObj);
@@ -105,13 +126,22 @@ describe('QuerySet tests', () => {
         expect(bookQs.count()).toBe(0);
     });
 
+    it('toString returns evaluated models', () => {
+        const firstTwoBooks = bookQs.filter(({ id }) => [0, 1].includes(id));
+        expect(firstTwoBooks.toString()).toBe(`QuerySet contents:
+    - Book: {id: 0, name: Tommi Kaikkonen - an Autobiography, releaseYear: 2050, author: 0, cover: 0, genres: [0, 1], tags: [Technology, Literary], publisher: 1}
+    - Book: {id: 1, name: Clean Code, releaseYear: 2008, author: 1, cover: 1, genres: [2], tags: [Technology], publisher: 0}`);
+    });
+
     it('custom methods works', () => {
         const {
             Book,
             Genre,
+            Tag,
             Cover,
             Author,
             Publisher,
+            Movie,
         } = createTestModels();
 
         const currentYear = 2015;
@@ -125,7 +155,7 @@ describe('QuerySet tests', () => {
         Book.querySetClass = CustomQuerySet;
 
         const orm = new ORM();
-        orm.register(Book, Genre, Cover, Author, Publisher);
+        orm.register(Book, Genre, Tag, Cover, Author, Publisher, Movie);
         const { session: sess } = createTestSessionWithData(orm);
 
         const customQs = sess.Book.getQuerySet();

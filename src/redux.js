@@ -1,8 +1,15 @@
 import { createSelectorCreator } from 'reselect';
 
-import { memoize, eqCheck } from './memoize';
+import { memoize } from './memoize';
 
+/**
+ * @module redux
+ */
 
+/**
+ * Calls all models' reducers if they exist.
+ * @return {undefined}
+ */
 export function defaultUpdater(session, action) {
     session.sessionBoundModels.forEach((modelClass) => {
         if (typeof modelClass.reducer === 'function') {
@@ -13,12 +20,22 @@ export function defaultUpdater(session, action) {
 }
 
 
-export const createReducer = (orm, updater = defaultUpdater) =>
-    (state, action) => {
+/**
+ * Call the returned function to pass actions to Redux-ORM.
+ *
+ * @global
+ *
+ * @param {ORM} orm - the ORM instance.
+ * @param {Function} [updater] - the function updating the ORM state based on the given action.
+ * @return {Function} reducer that will update the ORM state.
+ */
+export function createReducer(orm, updater = defaultUpdater) {
+    return (state, action) => {
         const session = orm.session(state || orm.getEmptyState());
         updater(session, action);
         return session.state;
     };
+}
 
 
 /**
@@ -32,7 +49,7 @@ export const createReducer = (orm, updater = defaultUpdater) =>
  *
  * When you use this method to create a selector, the returned selector
  * expects the whole `redux-orm` state branch as input. In the selector
- * function that you pass as the last argument, you will receive
+ * function that you pass as the last argument, you will receive a
  * `session` argument (a `Session` instance) followed by any
  * input arguments, like in `reselect`.
  *
@@ -51,11 +68,21 @@ export const createReducer = (orm, updater = defaultUpdater) =>
  * ```
  *
  * redux-orm uses a special memoization function to avoid recomputations.
- * When a selector runs for the first time, it checks which Models' state
- * branches were accessed. On subsequent runs, the selector first checks
- * if those branches have changed -- if not, it just returns the previous
- * result. This way you can use the `PureRenderMixin` in your React
- * components for performance gains.
+ *
+ * Everytime a selector runs, this function records which instances
+ * of your `Model`s were accessed.<br>
+ * On subsequent runs, the selector first checks if the previously
+ * accessed instances or `args` have changed in any way:
+ * <ul>
+ *     <li>If yes, the selector calls the function you passed to it.</li>
+ *     <li>If not, it just returns the previous result
+ *         (unless you call it for the first time).</li>
+ * </ul>
+ *
+ * This way you can use the `PureRenderMixin` in your React components
+ * for performance gains.
+ *
+ * @global
  *
  * @param {ORM} orm - the ORM instance
  * @param  {...Function} args - zero or more input selectors
@@ -64,8 +91,8 @@ export const createReducer = (orm, updater = defaultUpdater) =>
  */
 export function createSelector(orm, ...args) {
     if (args.length === 1) {
-        return memoize(args[0], eqCheck, orm);
+        return memoize(args[0], undefined, orm);
     }
 
-    return createSelectorCreator(memoize, eqCheck, orm)(...args);
+    return createSelectorCreator(memoize, undefined, orm)(...args);
 }
